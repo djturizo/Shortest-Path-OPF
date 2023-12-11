@@ -15,7 +15,7 @@ After instantiating the sample project, or if all dependencies are already insta
     include("barrier_case_pdf.jl");
     run_case("MATPOWER/case9mod.m"; output_file="plot.pdf");
     
-If we want replicability of the results we may fix the rng seed as follows:
+If we want replicability of the results we may fix the RNG seed as follows:
 
     rng = MersenneTwister(UInt32[0x2070c972, 0x521b92e3, 0xaf734195, 0x223eab32]);
     include("barrier_case_pdf.jl");
