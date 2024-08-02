@@ -27,9 +27,12 @@ global USE_PARALLEL = false
 const VERBOSE = !true
 
 
-macro fullprint(var)
-    if !VERBOSE; return; end
-    return esc(:(show(stdout, "text/plain", $var); println()))
+function fullprint(var)
+    if VERBOSE
+        show(stdout, "text/plain", var)
+        println()
+    end
+    return
 end
 
 
@@ -110,7 +113,7 @@ struct CaseFunctions
 end
 
 
-function get_endpoints(mpc, case_data, tol_inner)
+function get_endpoints(mpc, case_data, tol_inner, rng)
     # # Compute start point as the solution of the minimum loss problem
     # mpc_mod = deepcopy(mpc)
     # # # Get start point from randomly modified OPF problem
@@ -202,8 +205,14 @@ function get_endpoints(mpc, case_data, tol_inner)
         "constr_viol_tol" => tol_inner, "acceptable_constr_viol_tol" => tol_inner)
     function get_opf_u(model)
         # TODO: is the rectangular model the fastest?
-        opf_x_dict = PM.solve_opf(model, PM.ACRPowerModel,
-            solver)["solution"]["bus"]
+        # opf_x_dict = PM.solve_opf(model, PM.ACRPowerModel,
+        #     solver)["solution"]["bus"]
+        # opf_x_dict = PM.solve_model(model, PM.ACRPowerModel,
+        #     solver, PM.build_opf)["solution"]["bus"]
+        jump_model = PM.instantiate_model(model, PM.ACRPowerModel, PM.build_opf;
+            ref_extensions=[])
+        opf_x_dict = PM.optimize_model!(jump_model, relax_integrality=false,
+            optimizer=solver, solution_processors=[])["solution"]["bus"]
         opf_x = zeros(Float64, 2*n)
         for (bus, vir) in opf_x_dict
             k = parse(Int, bus)
@@ -219,7 +228,15 @@ function get_endpoints(mpc, case_data, tol_inner)
     # Compute start point as the solution of the minimum loss problem
     # Losses are minimized by minimizing the total generated power
     for (key, _) in mpc_mod["gen"]
-        mpc_mod["gen"][key]["cost"] = [0.0, 1.0, 0.0]
+        mpc_mod["gen"][key]["cost"] = [0.0; 1.0; 0.0] # Minimum loss Problem
+        # mpc_mod["gen"][key]["cost"] .*= -1 # Maximum cost problem
+        # mpc_mod["gen"][key]["cost"] = [0.0; randn(rng); 0.0] # Random direction linear cost
+        # mpc_mod["gen"][key]["cost"] .*= randn(rng)
+        # cost_vec = mpc_mod["gen"][key]["cost"]
+        # Q = qr(cost_vec).Q[:,2:3]
+        # coeff = randn(rng, 2, 1)
+        # coeff ./ norm(coeff, 2)
+        # mpc_mod["gen"][key]["cost"] = Q*coeff
     end
     u_start_full, x_start = get_opf_u(mpc_mod)
 
@@ -273,11 +290,11 @@ function load_case(case_dir::String, case_qc::Tuple,
     for k in 1:(2*n) # TODO: parallelize with pmap or whatever
         # Standard basis vector
         e_k = zeros(Float64, 2*n)
-        e_k[k] = 1.0
+        e_k[k] = 1
         J_k[k] = get_jac(e_k) - J_c
     end
     # J0 = J_c + sum(map((k) -> J_k[k]*qc_data.x0[k], 1:(2*n)))
-    # @fullprint max(abs.(J0-qc_data.J0)...)
+    # fullprint(max(abs.(J0-qc_data.J0)...))
 
     # Save and return struct
     return TestCase(case_dir, ind_u, Q, u_center, qc_data, ind, c, opf_u,
@@ -351,7 +368,7 @@ function make_functions(case::TestCase, tol_const::Union{Float64,Vector{Float64}
                 x_prev)
         end
         if flag == 0
-            @fullprint "Power flow did not converge."
+            fullprint("Power flow did not converge.")
             return ([1.0], nothing, nothing, nothing, nothing)
         end
         # return ([-1.0], [], [])
@@ -541,7 +558,7 @@ function get_feasible_path(case::TestCase, u_start, u_end, tvec,
     # Compute maximum violation of starting path
     beta_vec = max.(max.(con_pk...) .+ tol_inner, 0.0)
     # beta_vec .+= 2*tol_inner # force one iteration, TODO: delete
-    @fullprint max(beta_vec...)
+    fullprint("β = $(max(beta_vec...))")
     beta_vec .*= η # leave some gap between path and barrier
     beta_prev = deepcopy(beta_vec)
 
@@ -562,7 +579,7 @@ function get_feasible_path(case::TestCase, u_start, u_end, tvec,
             iter_max=iter_max, μ=μ_large, nu, save_hist)
 
         if exit_flag == 0
-            @fullprint "Shortest path optimization did not succeed at this step."
+            fullprint("Shortest path optimization did not succeed at this step.")
         elseif exit_flag == -1
             @warn "Iteration diverged, feasible path not found."
             break
@@ -571,7 +588,7 @@ function get_feasible_path(case::TestCase, u_start, u_end, tvec,
         beta_prev = deepcopy(beta_vec)
         beta_vec = max.(eval_path(v0) .+ tol_inner, 0.0)
         beta_vec = min.(beta_vec, beta_prev)
-        @fullprint max(beta_vec...)
+        fullprint("β = $(max(beta_vec...))")
         beta_vec .*= η # leave some gap between path and barrier
         beta_vec = min.(beta_vec, beta_prev) # prevent beta from increasing
         # Save new beta and path, if required
@@ -840,16 +857,16 @@ function get_shortest_path(functions::CaseFunctions, tvec, v0; x_pk0=nothing,
         end
         if alpha_k <= alpha_min
             if correct_inertia
-                @fullprint "Line search failed after inertia correction, " *
-                    "terminating iteration."
+                fullprint("Line search failed after inertia correction, " *
+                    "terminating iteration.")
                 break
             else
-                @fullprint "Line search failed, repeating step with inertia correction."
+                fullprint("Line search failed, repeating step with inertia correction.")
                 correct_inertia = true
                 continue
             end
         end
-        # @fullprint alpha_min
+        # fullprint(alpha_min)
 
         # Line search succeeded, no inertia correction needed for next iteration
         correct_inertia = false

@@ -11,7 +11,7 @@ import .ShortestPathOPF as SP
 using Infiltrator
 Infiltrator.clear_disabled!()
 
-AUTO_RUN = !false; # Flag to run a test case automatically on loading
+AUTO_RUN = false; # Flag to run a test case automatically on loading
 
 
 function run_case(case_dir::String; output_file::String="plot.pdf",
@@ -45,17 +45,17 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
     # Get start point as the solution of the minimum loss problem,
     # and end point as solution of the OPF.
     u_start_full, x_start, u_end_full, x_end = SP.get_endpoints(
-        mpc, case_data, tol_inner)
+        mpc, case_data, tol_inner, rng)
     # Correct endpoints so as to not include loads
     u_start = u_start_full[ind_u] + PdQd[ind_u]
     u_end = u_end_full[ind_u] + PdQd[ind_u]
     # New base case is the start point
     u0 = deepcopy(u_start_full)
-    println(max(abs.(u_start_full-u_end_full)...))
+    println("end-point distance (full): $(max(abs.(u_start_full-u_end_full)...))")
     u_diff = [u_start_full[1:end] u_end_full[1:end]][
         setdiff(1:end,ind_u),:]
-    @QC.fullprint max(abs.(u_diff[:,1] - u_diff[:,2])...)
-    println("")
+    println("end-point distance (fixed entries): $(max(abs.(u_diff[:,1] - u_diff[:,2])...))")
+    println()
     GC.gc(true) # force GC to clean any Ipopt residues
 
     # Problem Parameters
@@ -105,7 +105,7 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
     # Find initial feasible path
     μ_large = 1e-1
     get_pk = (v) -> map((k) -> v[(k*dim_u+1):((k+1)*dim_u)],
-        0:(n_points-1))
+        0:(n_points-1)) # does NOT exclude extreme points
     get_cons_pk = (v) -> map((cons) -> max(cons...), path_oracle(get_pk(v))[1])
     v0, x_pk0, beta_vec, v0_hist, _ = SP.get_feasible_path(case_data, u_start,
         u_end, tvec, tol_outer, tol_inner, tol_pf, iter_max_inner,
@@ -156,6 +156,17 @@ if AUTO_RUN
     # The cases below run slow
     # case_dir = "MATPOWER/pglib_opf_case162_ieee_dtc.m"; #TODO: fix power flow?
     # case_dir = "MATPOWER/pglib_opf_case200_activ.m"; #TODO: fix power flow?
+
+    # Molzahn's difficult cases
+    # case_dir = "Molzahn_cases/nmwc3acyclic_connected_feasible_space.m";
+    # case_dir = "Molzahn_cases/nmwc3acyclic_disconnected_feasible_space.m";
+    # case_dir = "Molzahn_cases/nmwc3cyclic.m";
+    # case_dir = "Molzahn_cases/nmwc4.m";
+    # case_dir = "Molzahn_cases/nmwc5.m";
+    # case_dir = "Molzahn_cases/nmwc14.m";
+    # case_dir = "Molzahn_cases/nmwc24.m";
+    # case_dir = "Molzahn_cases/nmwc57.m";
+    # case_dir = "Molzahn_cases/nmwc118.m";
 
     # SP.enable_parallel();
     run_case(case_dir; output_file="plot.pdf", rng);

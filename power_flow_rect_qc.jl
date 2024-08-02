@@ -715,12 +715,13 @@ function pf_i(x::AbstractVector{T}, i::Int64, case, ind,
 end
 
 
-function compare_derivatives(case, ind, input, u)
+function compare_derivatives(case, ind, input, u, Yrec_mod)
     n = case.n
 
     # Compute Jacobian and Hessians by formula
     Hpf, = pf_hessian(case, ind)
-    J0 = pf_jacobian(case.x0, ind.vd, Hpf)
+    # J0 = pf_jacobian(case.x0, ind.vd, Hpf)
+    J0 = rect_jacobian(case.x0, ind.pv, ind.vd, Yrec_mod)
     println("Hessian benchmark (formula):")
     @time pf_hessian(case, ind)
     println("Jacobian benchmark (formula):")
@@ -734,31 +735,33 @@ function compare_derivatives(case, ind, input, u)
     # Wrapper for the full power flow equations
     pfw = (x) -> map((i) -> pf_i(x, i, case, ind, u), 1:(2*n))
 
-    # # Compute Jacobian and Hessians by automatic differentiation
-    # J0_ad = FD.jacobian(pfw, case.x0)
-    # Hf_i = (i) -> FD.hessian(
-    #     (x) -> pf_i(x, i, case, ind, u), case.x0)
-    # Hf_ad = map(Hf_i, 1:(2*n))
-    # println("Hessian benchmark (ForwardDiff):")
-    # @time map(Hf_i, 1:(2*n))
-    # println("Jacobian benchmark (ForwardDiff):")
-    # @time FD.jacobian(pfw, case.x0)
-    # println("Jacobian benchmark (SparseDiffTools):")
-    # SDT.forwarddiff_color_jacobian(pfw, case.x0,
-    #     colorvec=SDT.matrix_colors(J0))
-    # @time SDT.forwarddiff_color_jacobian(pfw, case.x0,
-    # colorvec=SDT.matrix_colors(J0))
-
     # Compare to verify correctness
     print("PF equations max-error: ")
     @fullprint max(abs.(pfw(case.x0))...)
     print("PFv2 eqs. max-error:    ")
     @fullprint max(abs.(pf(case.x0, case, ind, input))...)
-    # print("PF Jacobian max-error:  ")
-    # @fullprint max(abs.(J0_ad - J0)...)
-    # print("PF Hessian max-error:   ")
-    # @fullprint max([max(abs.(Hf_ad[i] - Hpf[i])...)
-    #     for i in 1:(2*n)]...)
+
+    # Compute Jacobian and Hessians by automatic differentiation
+    J0_ad = FD.jacobian(pfw, case.x0)
+    Hf_i = (i) -> FD.hessian(
+        (x) -> pf_i(x, i, case, ind, u), case.x0)
+    Hf_ad = map(Hf_i, 1:(2*n))
+    println("Hessian benchmark (ForwardDiff):")
+    @time map(Hf_i, 1:(2*n))
+    println("Jacobian benchmark (ForwardDiff):")
+    @time FD.jacobian(pfw, case.x0)
+    println("Jacobian benchmark (SparseDiffTools):")
+    SDT.forwarddiff_color_jacobian(pfw, case.x0,
+        colorvec=SDT.matrix_colors(J0))
+    @time SDT.forwarddiff_color_jacobian(pfw, case.x0,
+    colorvec=SDT.matrix_colors(J0))
+
+    # Compare to verify correctness
+    print("PF Jacobian max-error:  ")
+    @fullprint max(abs.(J0_ad - J0)...)
+    print("PF Hessian max-error:   ")
+    @fullprint max([max(abs.(Hf_ad[i] - Hpf[i])...)
+        for i in 1:(2*n)]...)
 end
 
 
@@ -774,15 +777,16 @@ function compute_qc(case_input,
             pm = PM.instantiate_model(
                 case_input, PM.ACPPowerModel, PM.build_opf)
         else
-            # 'case_input' is an MPC instance. Hopefully the same sintax works?
+            # 'case_input' is an MPC instance. Hopefully the same syntax works?
             # Haven't tried though
             # TODO: Complete this case
-            error()
+            pm = case_input
+            # error()
         end
-        SAD._nlp_block_data(pm.model; backend = SAD.DefaultBackend())
-        println("Full benchmark (SymbolicAD):")
-        @time SAD._nlp_block_data(pm.model;
-            backend = SAD.DefaultBackend())
+        # SAD._nlp_block_data(pm.model; backend = SAD.DefaultBackend())
+        # println("Full benchmark (SymbolicAD):")
+        # @time SAD._nlp_block_data(pm.model;
+        #     backend = SAD.DefaultBackend())
     end
 
     # Keep only 1 slack bus (Vd bus), make the rest PV
@@ -825,11 +829,6 @@ function compute_qc(case_input,
     # real part of slack bus voltage
     u0[.+(n,ind.vd)] = input.Vg[ind.gen_vd]
 
-    # Compare derivatives if required
-    if check_derivatives
-        compare_derivatives(case, ind, input, u0)
-    end
-
     # Modified admittance matrices for complex PF
     Dpv = SA.sparse(ind.pv, ind.pv, fill(0.5, length(ind.pv)),
         n, n)
@@ -849,6 +848,11 @@ function compute_qc(case_input,
     J0 = rect_jacobian(case.x0, ind.pv, ind.vd, Yrec_mod)
     # Jacobian at origin for PF equations
     Jpf = rect_jacobian(zeros(Float64, 2*n), ind.pv, ind.vd, Yrec_mod)
+
+    # Compare derivatives if required
+    if check_derivatives
+        compare_derivatives(case, ind, input, u0, Yrec_mod)
+    end
 
     # Quadratic constraints data to be returned
     qc_data = @NamedTuple{n::Int64, x0::Vector{Float64},
