@@ -1,8 +1,9 @@
 ### Syntax
 
-    run_case(case_dir::String; output_file::String, br_fac::Float64, rng::MersenneTwister);
+    run_case(case_dir::String; output_file::String, rng::MersenneTwister);
     
-This function runs the shortest path algorithm using the [MATPOWER](https://github.com/MATPOWER/matpower) test case with file address specifi4ed by the String `case_dir`, and generates a PDF plot of the result. Keyword argument `output_file` is a String that specifies the output PDF filename (defaults to `"plot.pdf"`). Keyword argument `br_fac` specifies the branch limit reduction factor for current inequalities (defaults to `0.8`), it is best left unchanged. Keyword argument `rng` specifies a Mersenne Twister RNG object, in case seed control is needed for replicability (defaults to `MersenneTwister()` a standard, uncontrolled instance of type `MersenneTwister`).
+This function compues the shortest path between two feasible points of the [MATPOWER](https://github.com/MATPOWER/matpower) OPF test case with file address specified by the String `case_dir`, and generates a PDF plot of the result. Keyword argument `output_file` is a String that specifies the output PDF filename (defaults to `"plot.pdf"`). Keyword argument `rng` specifies a Mersenne Twister RNG object, in case seed control is needed for replicability (defaults to `MersenneTwister()` a standard, uncontrolled instance of type `MersenneTwister`). 
+The argument `rng` is not used right now.
 
 ### Examples
 If the dependencies are not installed we can use the sample project provided in `Project.toml` (it is not clean though):
