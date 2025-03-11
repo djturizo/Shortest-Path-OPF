@@ -5,7 +5,7 @@ import Plots as plt, ColorSchemes as CS
 
 include("power_flow_rect_qc.jl")
 import .PowerFlowRectQC as QC
-include("shortest_path.jl")
+include("shortest_path_v2.jl")
 import .ShortestPathOPF as SP
 
 using Infiltrator
@@ -29,7 +29,7 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
     tol_pf = 1e-8
     iter_max_pf = 20
     μ = 1e-6
-    nu = 1e6
+    nu_0 = 1e-6
 
 
     # Load test case
@@ -40,6 +40,7 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
     n = qc_data.n
     ind_u = case_data.ind_u
     dim_u = length(ind_u)
+    dim_p = dim_u + 2*n
     u0 = qc_data.u0
     PdQd = case_data.PdQd
 
@@ -70,19 +71,17 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
     prepend!(tdist, [0.0])
 
     # Check feasibility of endpoints
-    SP.open_parallel()
     case_functions = SP.make_functions(case_data, tol_inner, tol_pf,
         iter_max_pf, u0)
     oracle = case_functions.point_oracle
     path_oracle = case_functions.path_oracle
-    if max(oracle(u_start)[1]...) > 0.0
+    if max(oracle(u_start, x_start)[1]...) > 0.0
         @warn "Start point is not feasible"
     end
-    if max(oracle(u_end)[1]...) > 0.0
+    if max(oracle(u_end, x_end)[1]...) > 0.0
         @warn "End point is not feasible"
     end
-    # @QC.fullprint findmax(oracle(u_start)[1])
-    # return
+    @QC.fullprint findmax(oracle(u_start, x_start)[1])
 
     # Main animation function
     const_frames = Vector{Vector{Float64}}()
@@ -99,32 +98,32 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
     end
 
     # Profile.clear()
-    # Profile.init(n=10^8, delay=0.01)
+    # Profile.init(n=10^8, delay=0.001)
     # @profile begin
-    # try
+    # # try
     #--------------------------------------------------------------------
     # Find initial feasible path
     μ_large = 1e-1
-    get_pk = (v) -> map((k) -> v[(k*dim_u+1):((k+1)*dim_u)],
+    get_pk = (v) -> map((k) -> v[(k*dim_p+1):((k+1)*dim_p)],
         0:(n_points-1)) # does NOT exclude extreme points
     get_cons_pk = (v) -> map((cons) -> max(cons...), path_oracle(get_pk(v))[1])
-    v0, x_pk0, beta_vec, v0_hist, _ = SP.get_feasible_path(case_data, u_start,
+    v0, beta_vec, v0_hist, _ = SP.get_feasible_path(case_data, u_start,
         u_end, tvec, tol_outer, tol_inner, tol_pf, iter_max_feasible,
-        iter_max_pf, μ_large, nu, u0, true)
+        iter_max_pf, μ_large, nu_0, u0, true)
     n_v0 = length(v0_hist)
     for k = 1:n_v0
-        const_frames = vcat(const_frames, get_cons_pk.(v0_hist[k]))
+        const_frames = vcat(const_frames, map(get_cons_pk, v0_hist[k]))
     end
 
     if !(max(beta_vec...) > tol_inner)
         # Solve shortest path problem
-        v0, x_pk0, exit_flag, v_hist = SP.get_shortest_path(case_functions,
-            tvec, v0; x_pk0, tol_outer, alpha_min=tol_inner,
-            iter_max=iter_max_inner, μ, nu, save_hist=true)
-        const_frames = vcat(const_frames, get_cons_pk.(v_hist))
+        v0, exit_flag, v_hist = SP.get_shortest_path(case_functions,
+            tvec, v0; tol_outer, alpha_min=tol_inner,
+            iter_max=iter_max_inner, μ, nu_0, save_hist=true)
+        const_frames = vcat(const_frames, map(get_cons_pk, v_hist))
     end
     #--------------------------------------------------------------------
-    # catch; end
+    # # catch; end
     # end
     # statprofilehtml(path="time_test")
     # Profile.clear()
@@ -132,7 +131,6 @@ function run_case(case_dir::String; output_file::String="plot.pdf",
 
     add_frames(tvec, const_frames)
     plt.savefig(output_file)
-    SP.close_parallel()
     return
 end
 
@@ -170,6 +168,6 @@ if AUTO_RUN
     # case_dir = "Molzahn_cases/nmwc118.m";
 
     # SP.enable_parallel();
-    run_case(case_dir; output_file="plot_v1.pdf", rng);
+    run_case(case_dir; output_file="plot_v2.pdf", rng);
     GC.gc(true)
 end
