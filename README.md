@@ -15,6 +15,6 @@ If the dependencies are not installed we can use the sample project provided in 
     
 After instantiating the sample project, or if all dependencies are already installed, we can run the code directly. For example:
 
-    include("barrier_case_pdf.jl");
-    run_case("MATPOWER/case9mod.m"; output_file="plot.pdf");
+    include("barrier_case_time_v2.jl");
+    run_case("MATPOWER/case9mod.m");
    
