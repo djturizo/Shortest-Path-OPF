@@ -24,7 +24,7 @@ using Distributed
 import Hwloc as hw
 global ENABLE_PARALLEL = false
 global USE_PARALLEL = false
-const VERBOSE = !true
+const VERBOSE = true
 
 
 function fullprint(var)

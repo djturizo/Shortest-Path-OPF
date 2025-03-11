@@ -3,9 +3,8 @@ module PowerFlowRectQC
 
 using LinearAlgebra
 import SparseArrays as SA
-import PowerModels as PM, ForwardDiff as FD,
-    SparseDiffTools as SDT, SparsityDetection as SD,
-    MathOptSymbolicAD as SAD
+import PowerModels as PM, ForwardDiff as FD
+    # , SparseDiffTools as SDT, SparsityDetection as SD, MathOptSymbolicAD as SAD
 
 
 const θ_limit = 1.5707 # must be close, but less than pi/2
@@ -36,7 +35,7 @@ function parse_case(mpc)
                 exp(im*bus["va"])
         end
     else
-        println("Power flow did not converge! " *
+        @info("Power flow did not converge! " *
             "Using flat start as the operating point")
         V0 = ones(ComplexF64, n)
     end
@@ -480,8 +479,8 @@ function pf_jacobian(x::Vector{Float64}, ind_vd::Int64,
     # For simplicity, we compute the transposed Jacobian
     n = div(length(x), 2)
     x_sp = SA.sparse(x)
-    nzval = Float64[]
-    rowval = Int64[]
+    nzval = Vector{Vector{Float64}}(undef, 2*n)
+    rowval = Vector{Vector{Int64}}(undef, 2*n)
     colptr = ones(Int64, 2*n+1)
     # Build variables for direct constructor call
     for i in 1:(2*n)
@@ -498,13 +497,13 @@ function pf_jacobian(x::Vector{Float64}, ind_vd::Int64,
             # Jacobian column from the Hessian
             col_i = Hpf[i]*x_sp
         end
-        nzval = vcat(nzval, col_i.nzval)
-        rowval = vcat(rowval, col_i.nzind)
+        nzval[i] = col_i.nzval
+        rowval[i] = col_i.nzind
         colptr[i+1] = colptr[i] + length(col_i.nzval)
     end
     # Build transposed Jacobian
     Jt = SA.SparseMatrixCSC{Float64,Int64}(2*n, 2*n,
-        colptr, rowval, nzval)
+        colptr, vcat(rowval...), vcat(nzval...))
     return transpose(Jt)
 end
 
@@ -570,12 +569,13 @@ function build_jac(x, YxR, YxI, n, D_pv, D_vd, M_vd,
     vR = x[1:n]
     vI = x[(n+1):end]
     return (SA.I - D_pv - D_vd) * (SA.spdiagm(0 => vcat(vR, vR),
-    -n => vI, n => -vI) * Yrec_mod + SA.spdiagm(0 => vcat(YxR, YxR),
-    -n => YxI, n => -YxI)) + J_pv + M_vd
+        -n => vI, n => -vI) * Yrec_mod + SA.spdiagm(0 => vcat(YxR, YxR),
+        -n => YxI, n => -YxI)) + J_pv + M_vd
 end
 
 
-function rect_jacobian(x::Vector{Float64},
+# WARN: 'x' cannot be modified, it may be a view
+function rect_jacobian(x::AbstractVector{Float64},
     ind_pv::Vector{Int64}, ind_vd::Int64,
     Yrec_mod::SA.SparseMatrixCSC{Float64,Int64}
     )::SA.SparseMatrixCSC{Float64,Int64}
@@ -590,12 +590,13 @@ end
 
 
 # Rectangular power flow solver function
-function rect_pf(u::Vector{Float64},
+function rect_pf(u::Vector{T},
     ind_pq::Vector{Int64}, ind_pv::Vector{Int64}, ind_vd::Int64,
     Yrec_mod::SA.SparseMatrixCSC{Float64,Int64},
     tol::Float64, iter_max::Int64,
-    x0::Union{Vector{Float64},Nothing}=nothing,
-    eval::Bool=false)::Tuple{Vector{Float64},Int64}
+    # WARN: 'x0' cannot be modified, it may be a view
+    x0::Union{AbstractVector{T},Nothing}=nothing,
+    eval::Bool=false) where T
     n = div(length(u), 2)
     if !eval
         # Not in evaluation mode, get Jacobian data
@@ -603,11 +604,11 @@ function rect_pf(u::Vector{Float64},
     end
     if typeof(x0) <: Nothing
         # Starting guess not provided, use flat start
-        x = vcat(ones(Float64, n), zeros(Float64, n))
+        x = vcat(ones(T, n), zeros(T, n))
     else
-        x = deepcopy(x0)
+        x = copy(x0)
     end
-    fx = zeros(Float64, 2*n)
+    fx = zeros(T, 2*n)
     err = tol + 1.0
     # Newton iteration
     for iter in 0:iter_max
@@ -715,54 +716,54 @@ function pf_i(x::AbstractVector{T}, i::Int64, case, ind,
 end
 
 
-function compare_derivatives(case, ind, input, u, Yrec_mod)
-    n = case.n
+# function compare_derivatives(case, ind, input, u, Yrec_mod)
+#     n = case.n
 
-    # Compute Jacobian and Hessians by formula
-    Hpf, = pf_hessian(case, ind)
-    # J0 = pf_jacobian(case.x0, ind.vd, Hpf)
-    J0 = rect_jacobian(case.x0, ind.pv, ind.vd, Yrec_mod)
-    println("Hessian benchmark (formula):")
-    @time pf_hessian(case, ind)
-    println("Jacobian benchmark (formula):")
-    @time pf_jacobian(case.x0, ind.vd, Hpf)
-    println("(NonZeros, Entries) = " *
-        "($(length(J0.nzval)), $(length(case.x0)^2))")
-    println("(MaxColor, Size)    = " *
-        "($(max(SDT.matrix_colors(J0)...))," *
-        " $(length(case.x0)))")
+#     # Compute Jacobian and Hessians by formula
+#     Hpf, = pf_hessian(case, ind)
+#     # J0 = pf_jacobian(case.x0, ind.vd, Hpf)
+#     J0 = rect_jacobian(case.x0, ind.pv, ind.vd, Yrec_mod)
+#     println("Hessian benchmark (formula):")
+#     @time pf_hessian(case, ind)
+#     println("Jacobian benchmark (formula):")
+#     @time pf_jacobian(case.x0, ind.vd, Hpf)
+#     println("(NonZeros, Entries) = " *
+#         "($(length(J0.nzval)), $(length(case.x0)^2))")
+#     println("(MaxColor, Size)    = " *
+#         "($(max(SDT.matrix_colors(J0)...))," *
+#         " $(length(case.x0)))")
 
-    # Wrapper for the full power flow equations
-    pfw = (x) -> map((i) -> pf_i(x, i, case, ind, u), 1:(2*n))
+#     # Wrapper for the full power flow equations
+#     pfw = (x) -> map((i) -> pf_i(x, i, case, ind, u), 1:(2*n))
 
-    # Compare to verify correctness
-    print("PF equations max-error: ")
-    @fullprint max(abs.(pfw(case.x0))...)
-    print("PFv2 eqs. max-error:    ")
-    @fullprint max(abs.(pf(case.x0, case, ind, input))...)
+#     # Compare to verify correctness
+#     print("PF equations max-error: ")
+#     @fullprint max(abs.(pfw(case.x0))...)
+#     print("PFv2 eqs. max-error:    ")
+#     @fullprint max(abs.(pf(case.x0, case, ind, input))...)
 
-    # Compute Jacobian and Hessians by automatic differentiation
-    J0_ad = FD.jacobian(pfw, case.x0)
-    Hf_i = (i) -> FD.hessian(
-        (x) -> pf_i(x, i, case, ind, u), case.x0)
-    Hf_ad = map(Hf_i, 1:(2*n))
-    println("Hessian benchmark (ForwardDiff):")
-    @time map(Hf_i, 1:(2*n))
-    println("Jacobian benchmark (ForwardDiff):")
-    @time FD.jacobian(pfw, case.x0)
-    println("Jacobian benchmark (SparseDiffTools):")
-    SDT.forwarddiff_color_jacobian(pfw, case.x0,
-        colorvec=SDT.matrix_colors(J0))
-    @time SDT.forwarddiff_color_jacobian(pfw, case.x0,
-    colorvec=SDT.matrix_colors(J0))
+#     # Compute Jacobian and Hessians by automatic differentiation
+#     J0_ad = FD.jacobian(pfw, case.x0)
+#     Hf_i = (i) -> FD.hessian(
+#         (x) -> pf_i(x, i, case, ind, u), case.x0)
+#     Hf_ad = map(Hf_i, 1:(2*n))
+#     println("Hessian benchmark (ForwardDiff):")
+#     @time map(Hf_i, 1:(2*n))
+#     println("Jacobian benchmark (ForwardDiff):")
+#     @time FD.jacobian(pfw, case.x0)
+#     println("Jacobian benchmark (SparseDiffTools):")
+#     SDT.forwarddiff_color_jacobian(pfw, case.x0,
+#         colorvec=SDT.matrix_colors(J0))
+#     @time SDT.forwarddiff_color_jacobian(pfw, case.x0,
+#     colorvec=SDT.matrix_colors(J0))
 
-    # Compare to verify correctness
-    print("PF Jacobian max-error:  ")
-    @fullprint max(abs.(J0_ad - J0)...)
-    print("PF Hessian max-error:   ")
-    @fullprint max([max(abs.(Hf_ad[i] - Hpf[i])...)
-        for i in 1:(2*n)]...)
-end
+#     # Compare to verify correctness
+#     print("PF Jacobian max-error:  ")
+#     @fullprint max(abs.(J0_ad - J0)...)
+#     print("PF Hessian max-error:   ")
+#     @fullprint max([max(abs.(Hf_ad[i] - Hpf[i])...)
+#         for i in 1:(2*n)]...)
+# end
 
 
 function compute_qc(case_input,
@@ -851,7 +852,7 @@ function compute_qc(case_input,
 
     # Compare derivatives if required
     if check_derivatives
-        compare_derivatives(case, ind, input, u0, Yrec_mod)
+        # compare_derivatives(case, ind, input, u0, Yrec_mod)
     end
 
     # Quadratic constraints data to be returned
