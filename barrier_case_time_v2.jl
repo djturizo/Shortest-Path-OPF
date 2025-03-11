@@ -12,7 +12,7 @@ import .PowerFlowRectQC as QC
 include("shortest_path_v2.jl")
 import .ShortestPathOPF as SP
 
-AUTO_RUN = !false; # Flag to run a test case automatically on loading
+AUTO_RUN = false; # Flag to run a test case automatically on loading
 
 
 function run_case(case_dir::String;
@@ -68,6 +68,8 @@ function run_case(case_dir::String;
             u_end = deepcopy(u0)
             u_end[2:3] = [1.5; 1.3]
             u_end = u_end[ind_u]
+            @QC.fullprint u_start
+            @QC.fullprint u_end
             x_start = case_data.pf_solver(u_start, u0, tol_pf, iter_max_pf)[1]
             x_end = case_data.pf_solver(u_end, u0, tol_pf, iter_max_pf)[1]
         else
@@ -86,6 +88,9 @@ function run_case(case_dir::String;
         # println("")
     elseif isnothing(u_start) || isnothing(u_end)
         error("Only on of the two endpoints was provided.")
+    else
+        x_start = case_data.pf_solver(u_start, u0, tol_pf, iter_max_pf)[1]
+        x_end = case_data.pf_solver(u_end, u0, tol_pf, iter_max_pf)[1]
     end
 
     # Problem Parameters
