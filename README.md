@@ -24,3 +24,15 @@ Or if you want to provide the endpoints manually you could write, for example:
     u_start = [0.5; 0.5];
     u_end = [1.5; 1.3];
     max_violation, max_violation_after, path_diff_pc, fobj_diff_pc, total_time = run_case("MATPOWER/case9dongchan.m"; u_start=u_start, u_end=u_end);
+
+### Citation
+
+    @misc{turizo2025discreteshortestpathsoptimal,
+      title={Discrete Shortest Paths in Optimal Power Flow Feasible Regions}, 
+      author={Daniel Turizo and Diego Cifuentes and Anton Leykin and Daniel K. Molzahn},
+      year={2025},
+      eprint={2408.02172},
+      archivePrefix={arXiv},
+      primaryClass={math.OC},
+      url={https://arxiv.org/abs/2408.02172}, 
+    }
