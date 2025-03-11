@@ -16,5 +16,11 @@ If the dependencies are not installed we can use the sample project provided in 
 After instantiating the sample project, or if all dependencies are already installed, we can run the code directly. For example:
 
     include("barrier_case_time_v2.jl");
-    run_case("MATPOWER/case9mod.m");
-   
+    max_violation, max_violation_after, path_diff_pc, fobj_diff_pc, total_time = run_case("MATPOWER/case9mod.m");
+
+Or if you want to provide the endpoints manually you could write, for example:
+
+    include("barrier_case_time_v2.jl");
+    u_start = [0.5; 0.5];
+    u_end = [1.5; 1.3];
+    max_violation, max_violation_after, path_diff_pc, fobj_diff_pc, total_time = run_case("MATPOWER/case9dongchan.m"; u_start=u_start, u_end=u_end);
